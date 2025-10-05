@@ -28,6 +28,7 @@ class BillionsNetwork:
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
+        self.cookie_headers = {}
 
     def clear_terminal(self):
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -132,10 +133,8 @@ class BillionsNetwork:
 
         return datetime.fromisoformat(date_str)
     
-    def decode_session_id(self, session_id: str):
+    def decode_token(self, token: str):
         try:
-            token = session_id.replace("session_id=", "")
-
             header, payload, signature = token.split(".")
             decoded_payload = base64.urlsafe_b64decode(payload + "==").decode("utf-8")
             parsed_payload = json.loads(decoded_payload)
@@ -200,11 +199,11 @@ class BillionsNetwork:
         
         return None
     
-    async def user_data(self, session_id: str, proxy_url=None, retries=5):
+    async def user_data(self, token: str, proxy_url=None, retries=5):
         url = f"{self.BASE_API}/me"
         headers = {
             **self.headers,
-            "Cookie": session_id
+            "Cookie": self.cookie_headers[token]
         }
         await asyncio.sleep(3)
         for attempt in range(retries):
@@ -227,12 +226,12 @@ class BillionsNetwork:
 
         return None
     
-    async def claim_daily_reward(self, session_id: str, proxy_url=None, retries=5):
+    async def claim_daily_reward(self, token: str, proxy_url=None, retries=5):
         url = f"{self.BASE_API}/claim-daily-reward"
         headers = {
             **self.headers,
             "Content-Length": "0",
-            "Cookie": session_id
+            "Cookie": self.cookie_headers[token]
         }
         await asyncio.sleep(3)
         for attempt in range(retries):
@@ -255,9 +254,9 @@ class BillionsNetwork:
 
         return None
             
-    async def process_check_connection(self, session_id: str, use_proxy: bool, rotate_proxy: bool):
+    async def process_check_connection(self, token: str, use_proxy: bool, rotate_proxy: bool):
         while True:
-            proxy = self.get_next_proxy_for_account(session_id) if use_proxy else None
+            proxy = self.get_next_proxy_for_account(token) if use_proxy else None
             self.log(
                 f"{Fore.CYAN+Style.BRIGHT}Proxy   :{Style.RESET_ALL}"
                 f"{Fore.WHITE+Style.BRIGHT} {proxy} {Style.RESET_ALL}"
@@ -266,18 +265,18 @@ class BillionsNetwork:
             is_valid = await self.check_connection(proxy)
             if not is_valid:
                 if rotate_proxy:
-                    proxy = self.rotate_proxy_for_account(session_id)
+                    proxy = self.rotate_proxy_for_account(token)
 
                 continue
 
             return True
         
-    async def process_accounts(self, session_id: str, use_proxy: bool, rotate_proxy: bool):
-        is_valid = await self.process_check_connection(session_id, use_proxy, rotate_proxy)
+    async def process_accounts(self, token: str, use_proxy: bool, rotate_proxy: bool):
+        is_valid = await self.process_check_connection(token, use_proxy, rotate_proxy)
         if is_valid:
-            proxy = self.get_next_proxy_for_account(session_id) if use_proxy else None
+            proxy = self.get_next_proxy_for_account(token) if use_proxy else None
 
-            user = await self.user_data(session_id, proxy)
+            user = await self.user_data(token, proxy)
             if not user:
                 return
 
@@ -295,7 +294,7 @@ class BillionsNetwork:
             
             next_daily_reward = user.get("nextDailyRewardAt", None)
             if next_daily_reward is None:
-                claim = await self.claim_daily_reward(session_id, proxy)
+                claim = await self.claim_daily_reward(token, proxy)
                 if claim:
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
@@ -321,7 +320,7 @@ class BillionsNetwork:
                     )
                 
                 else:
-                    claim = await self.claim_daily_reward(session_id, proxy)
+                    claim = await self.claim_daily_reward(token, proxy)
                     if claim:
                         self.log(
                             f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
@@ -333,51 +332,45 @@ class BillionsNetwork:
 
     async def main(self):
         try:
-            with open('cookies.txt', 'r') as file:
-                accounts = [line.strip() for line in file if line.strip()]
+            with open('tokens.txt', 'r') as file:
+                tokens = [line.strip() for line in file if line.strip()]
             
             proxy_choice, rotate_proxy = self.print_question()
 
             while True:
-                use_proxy = True if proxy_choice == 1 else False
-
                 self.clear_terminal()
                 self.welcome()
                 self.log(
                     f"{Fore.GREEN + Style.BRIGHT}Account's Total: {Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT}{len(accounts)}{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{len(tokens)}{Style.RESET_ALL}"
                 )
 
+                use_proxy = True if proxy_choice == 1 else False
                 if use_proxy:
                     await self.load_proxies()
                 
                 separator = "=" * 26
-                for idx, session_id in enumerate(accounts, 1):
-                    if session_id:
+                for idx, token in enumerate(tokens, 1):
+                    if token:
                         self.log(
                             f"{Fore.CYAN + Style.BRIGHT}{separator}[{Style.RESET_ALL}"
                             f"{Fore.WHITE + Style.BRIGHT} {idx} {Style.RESET_ALL}"
                             f"{Fore.CYAN + Style.BRIGHT}Of{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {len(accounts)} {Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {len(tokens)} {Style.RESET_ALL}"
                             f"{Fore.CYAN + Style.BRIGHT}]{separator}{Style.RESET_ALL}"
                         )
 
-                        if not session_id.startswith("session_id="):
-                            self.log(
-                                f"{Fore.CYAN + Style.BRIGHT}Status  :{Style.RESET_ALL}"
-                                f"{Fore.RED + Style.BRIGHT} Invalid Session Id Format {Style.RESET_ALL}"
-                            )
-                            continue
-
-                        exp_time = self.decode_session_id(session_id)
+                        exp_time = self.decode_token(token)
                         if int(time.time()) > exp_time:
                             self.log(
                                 f"{Fore.CYAN + Style.BRIGHT}Status  :{Style.RESET_ALL}"
                                 f"{Fore.RED + Style.BRIGHT} Session Id Already Expired {Style.RESET_ALL}"
                             )
                             continue
+
+                        self.cookie_headers[token] = f"session_id={token}"
                             
-                        await self.process_accounts(session_id, use_proxy, rotate_proxy)
+                        await self.process_accounts(token, use_proxy, rotate_proxy)
                         await asyncio.sleep(3)
 
                 self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*63)
@@ -396,7 +389,7 @@ class BillionsNetwork:
                     seconds -= 1
 
         except FileNotFoundError:
-            self.log(f"{Fore.RED}File 'accounts.txt' Not Found.{Style.RESET_ALL}")
+            self.log(f"{Fore.RED}File 'tokens.txt' Not Found.{Style.RESET_ALL}")
             return
         except Exception as e:
             self.log(f"{Fore.RED+Style.BRIGHT}Error: {e}{Style.RESET_ALL}")
