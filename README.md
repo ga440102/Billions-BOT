@@ -22,7 +22,7 @@
 
 Billions Network BOT is an automated tool designed to daily check-in completion across multiple accounts. It provides seamless offers robust proxy support for enhanced security and reliability.
 
-**🔗 Get Started:** [Register on Billions Network](https://signup.billions.network?rc=E6R6G7KW)  
+**🔗 Get Started:** [Register on Billions Network](https://signup.billions.network?rc=65T7HMGW)  
 
 > **Important:** Signup with google account
 
